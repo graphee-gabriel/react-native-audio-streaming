@@ -18,9 +18,7 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Binder;
 import android.os.Build;
-import android.os.Handler;
 import android.os.IBinder;
-import android.support.v4.app.TaskStackBuilder;
 import android.telephony.PhoneStateListener;
 import android.telephony.TelephonyManager;
 import android.util.Log;
@@ -43,7 +41,6 @@ public class SignalService extends Service implements OnErrorListener,
     private Notification notification;
     private Notification.Builder notifyBuilder;
     private NotificationManager notifyManager = null;
-    public static RemoteViews remoteViews;
     private MultiPlayer aacPlayer;
 
     private static final int AAC_BUFFER_CAPACITY_MS = 2500;
@@ -53,7 +50,6 @@ public class SignalService extends Service implements OnErrorListener,
             BROADCAST_PLAYBACK_PLAY = "pause",
             BROADCAST_EXIT = "exit";
 
-    private final Handler handler = new Handler();
     private final IBinder binder = new SignalBinder();
     private final SignalReceiver receiver = new SignalReceiver(this);
     private Context context;
@@ -61,7 +57,6 @@ public class SignalService extends Service implements OnErrorListener,
     public boolean isPlaying = false;
     private boolean isPreparingStarted = false;
     private EventsReceiver eventsReceiver;
-    private ReactNativeAudioStreamingModule module;
 
     private TelephonyManager phoneManager;
     private PhoneListener phoneStateListener;
@@ -69,7 +64,6 @@ public class SignalService extends Service implements OnErrorListener,
     public void setData(Context context, ReactNativeAudioStreamingModule module) {
         this.context = context;
         this.clsActivity = module.getClassActivity();
-        this.module = module;
 
         eventsReceiver = new EventsReceiver(module);
 
@@ -142,7 +136,7 @@ public class SignalService extends Service implements OnErrorListener,
 
     public void play() {
         if (isConnected()) {
-        Log.e(TAG, "play: isConnected");
+            //Log.e(TAG, "play: isConnected");
             startForeground(NOTIFY_ME_ID, notification);
             this.prepare();
         } else {
@@ -164,10 +158,6 @@ public class SignalService extends Service implements OnErrorListener,
         sendBroadcast(new Intent(Mode.STOPPED));
     }
 
-    public NotificationManager getNotifyManager() {
-        return notifyManager;
-    }
-
     public class SignalBinder extends Binder {
         public SignalService getService() {
             return SignalService.this;
@@ -175,20 +165,16 @@ public class SignalService extends Service implements OnErrorListener,
     }
 
     private void runAsForeground() {
-        remoteViews = new RemoteViews(getApplicationContext().getPackageName(), R.layout.streaming_notification_player);
         notifyBuilder = new Notification.Builder(this)
                 .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off) // TODO Use app icon instead
                 .setContentText("")
-                .setOngoing(true)
-                .setContent(remoteViews);
-
+                .setOngoing(true);
         Intent notificationIntent = new Intent(this, clsActivity);
         PendingIntent pendingIntent=PendingIntent.getActivity(this, 0,
                 notificationIntent, Intent.FLAG_ACTIVITY_NEW_TASK);
 
         notifyBuilder.setContentIntent(pendingIntent);
-        remoteViews.setOnClickPendingIntent(R.id.btn_streaming_notification_play, makePendingIntent(BROADCAST_PLAYBACK_PLAY));
-        remoteViews.setOnClickPendingIntent(R.id.btn_streaming_notification_stop, makePendingIntent(BROADCAST_EXIT));
+
         notifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 
         if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -204,9 +190,9 @@ public class SignalService extends Service implements OnErrorListener,
 
         }
         notification = notifyBuilder.build();
-//        notifyManager.notify(NOTIFY_ME_ID, notification);
-
-//        startForeground(NOTIFY_ME_ID, notification);
+        notification.bigContentView = new RemoteViews(getApplicationContext().getPackageName(), R.layout.streaming_notification_player);
+        notification.bigContentView.setOnClickPendingIntent(R.id.btn_streaming_notification_play, makePendingIntent(BROADCAST_PLAYBACK_PLAY));
+        notification.bigContentView.setOnClickPendingIntent(R.id.btn_streaming_notification_stop, makePendingIntent(BROADCAST_EXIT));
     }
 
     private PendingIntent makePendingIntent(String broadcast) {
@@ -236,7 +222,6 @@ public class SignalService extends Service implements OnErrorListener,
     }
 
     public void prepare() {
-//        stopForeground(true);
         /* ------Station- buffering-------- */
         this.isPreparingStarted = true;
         sendBroadcast(new Intent(Mode.START_PREPARING));
@@ -246,12 +231,12 @@ public class SignalService extends Service implements OnErrorListener,
             Log.e(TAG, "Player was already stopped", e);
         }
         try {
-//            aacPlayer.play(streamingURL);
             aacPlayer.playAsync(streamingURL);
         } catch (Exception e) {
+            Log.e(TAG, "Player error", e);
+            //stop();
             e.printStackTrace();
-            Log.e(TAG, "Player was not ready to play", e);
-            stop();
+            playerException(e);
         }
     }
 
@@ -356,9 +341,9 @@ public class SignalService extends Service implements OnErrorListener,
         metaIntent.putExtra("value", value);
         sendBroadcast(metaIntent);
 
-        if (key != null && key.equals("StreamTitle") && remoteViews != null && value != null) {
-            remoteViews.setTextViewText(R.id.song_name_notification, value);
-            notifyBuilder.setContent(remoteViews);
+        if (key != null && key.equals("StreamTitle") && notification != null && notification.bigContentView != null && value != null) {
+            notification.bigContentView.setTextViewText(R.id.song_name_notification, value);
+            notifyBuilder.setContent(notification.bigContentView);
             notifyManager.notify(NOTIFY_ME_ID, notifyBuilder.build());
         }
     }
